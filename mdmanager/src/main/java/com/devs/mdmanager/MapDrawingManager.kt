@@ -23,8 +23,10 @@ data class MapDrawingManager(
     var strokWidth: Float = DEFAULT_STROKE_WIDTH,
     var fillColor: Int = DEFAULT_FILL_COLOR,
     var strokColor: Int = DEFAULT_STROKE_COLOR,
-    private var _shapeType: ShapeType = DEFAULT_SHAPE_TYPE)
-    :
+    var drawingLimit: Int = DRAWING_LIMIT,
+    var markerOptionVisibility: Boolean = MARKER_OPTION_VISIBILITY,
+    private var _shapeType: ShapeType = DEFAULT_SHAPE_TYPE
+) :
     GoogleMap.OnMapClickListener,
     GoogleMap.OnMarkerClickListener,
     GoogleMap.OnMarkerDragListener {
@@ -36,7 +38,7 @@ data class MapDrawingManager(
             _shapeType = value
 
             // Conditions to remove any uncompleted shape during shape type change
-            if( !(isLastPolygonDone && isLastPolylineDone) ) {
+            if (!(isLastPolygonDone && isLastPolylineDone)) {
                 currentPolyline?.remove()
                 currentPolyline = null
                 latLngListCurrent.clear()
@@ -54,6 +56,7 @@ data class MapDrawingManager(
         private const val DEFAULT_BADGE_TEXT_COLOR = Color.BLACK
         private const val DEFAULT_MARKER_COLOR = Color.RED
         private const val DEFAULT_MARKER_SIZE = 12 // in dp
+        private const val DRAWING_LIMIT = 20000 // in dp
         private const val DEFAULT_STROKE_WIDTH = 7f
         private val DEFAULT_STROKE_COLOR = Color.rgb(120, 161, 46)
         private val DEFAULT_FILL_COLOR = Color.argb(90, 120, 161, 46)
@@ -63,6 +66,7 @@ data class MapDrawingManager(
         private val POLYLINE_STROKE_COLOR = Color.rgb(218, 179, 32)
         private val CIRCLE_STROKE_COLOR = Color.rgb(42, 177, 155)
         private val CIRCLE_FILL_COLOR = Color.argb(90, 42, 177, 155)
+        private val MARKER_OPTION_VISIBILITY = true
 
     }
 
@@ -84,7 +88,7 @@ data class MapDrawingManager(
     // Triple can contain <All Dots, Badge, Shape>
     public var polygonList = ArrayList<Triple<ArrayList<Marker>, Marker, Polygon>>()
         private set
-    public var polylineList = ArrayList<Triple<ArrayList<Marker>,Marker, Polyline>>()
+    public var polylineList = ArrayList<Triple<ArrayList<Marker>, Marker, Polyline>>()
         private set
     public var circleList = ArrayList<Triple<List<Marker>, Marker, Circle>>()
         private set
@@ -93,6 +97,7 @@ data class MapDrawingManager(
 
     // Don't forgot to reset "shapeID" on clear and complete any shape
     private var shapeID = System.currentTimeMillis()
+
     // Don't forgot to reset "current elements" on clear and complete any shape
     private val currentMarkers = ArrayList<Marker>()
     private var tempPolyline: Polyline? = null
@@ -101,6 +106,7 @@ data class MapDrawingManager(
     private var currentCircle: Circle? = null
     private var currentMarker: Marker? = null
     private var currentShapeIndex: Int = -1
+
     /**
      * current marker's count for reference.
      */
@@ -114,10 +120,12 @@ data class MapDrawingManager(
 
     override fun onMapClick(latLng: LatLng) {
         //To prevent drawing any shape if removeMode is enable
-        if(isRemoveMode) return
+        if (isRemoveMode) return
 
         when (shapeType) {
             ShapeType.POLYGON -> {
+                if (polygonList.size >= drawingLimit) return
+
                 if (isLastPolygonDone) {
                     resetPolygon()
                     isLastPolygonDone = false
@@ -159,6 +167,8 @@ data class MapDrawingManager(
                 }
             }
             ShapeType.POLYLINE -> {
+                if (polylineList.size >= drawingLimit) return
+
                 if (isLastPolylineDone) {
                     resetPolyline()
                     isLastPolylineDone = false
@@ -200,10 +210,14 @@ data class MapDrawingManager(
 
             }
             ShapeType.CIRCLE -> {
+                if (circleList.size >= drawingLimit) return
+
                 resetCircle()
                 drawCircle(latLng)
             }
             ShapeType.POINT -> {
+                if (markerList.size >= drawingLimit) return
+
                 resetMarker()
                 drawMarker(latLng)
             }
@@ -212,7 +226,7 @@ data class MapDrawingManager(
 
     override fun onMarkerClick(marker: Marker): Boolean {
 
-        if(isRemoveMode) {
+        if (isRemoveMode) {
             handleRemovalProcess(marker)
             //  default info window should not appear for ShapeType.POINT
             return (shapeType == ShapeType.POINT)
@@ -230,8 +244,9 @@ data class MapDrawingManager(
                         latLngListCurrent.add(bc.build().center)
 
                         // Send index -1 if you want to draw a new fresh polygon
-                        isLastPolygonDone = drawPolygon(shapeID.toString(), -1
-                            , latLngListCurrent)
+                        isLastPolygonDone = drawPolygon(
+                            shapeID.toString(), -1, latLngListCurrent
+                        )
                         if (isLastPolygonDone) {
                             currentPolyline?.remove()
                             resetPolygon()
@@ -244,8 +259,9 @@ data class MapDrawingManager(
                 if (!latLngListCurrent.isNullOrEmpty()) {
                     if (latLngListCurrent.last().equals(marker.position)) {
                         // Send index -1 if you want to draw a new fresh polyline
-                        isLastPolylineDone = drawPolyline(shapeID.toString(), -1
-                            , latLngListCurrent)
+                        isLastPolylineDone = drawPolyline(
+                            shapeID.toString(), -1, latLngListCurrent
+                        )
                         if (isLastPolylineDone) {
                             resetPolygon()
                         }
@@ -272,16 +288,16 @@ data class MapDrawingManager(
         val shapeID = markerTagParts[1]
         currentEditingShape = ShapeType.valueOf(markerTagParts[2])
 
-        when(currentEditingShape) {
+        when (currentEditingShape) {
             ShapeType.POLYGON -> {
-                currentShapeIndex = polygonList.indexOfFirst { it.third.tag == shapeID }// -1 if not found
-                if(currentShapeIndex >= 0){
+                currentShapeIndex =
+                    polygonList.indexOfFirst { it.third.tag == shapeID }// -1 if not found
+                if (currentShapeIndex >= 0) {
                     // Edit completed polygon
                     currentPolygon = polygonList[currentShapeIndex].third
                     latLngListTemp.clear()
                     latLngListTemp.addAll(polygonList[currentShapeIndex].third.points.dropLast(1))
-                }
-                else {
+                } else {
                     // Edit uncompleted polygon (that is actually a polyline)
                     currentPolygon = null
                     latLngListCurrent.clear()
@@ -290,14 +306,14 @@ data class MapDrawingManager(
             }
 
             ShapeType.POLYLINE -> {
-                currentShapeIndex = polylineList.indexOfFirst { it.third.tag == shapeID }// -1 if not found
-                if(currentShapeIndex >= 0){
+                currentShapeIndex =
+                    polylineList.indexOfFirst { it.third.tag == shapeID }// -1 if not found
+                if (currentShapeIndex >= 0) {
                     // Edit completed polyline
                     tempPolyline = polylineList[currentShapeIndex].third
                     latLngListTemp.clear()
                     latLngListTemp.addAll(polylineList[currentShapeIndex].third.points)
-                }
-                else {
+                } else {
                     // Edit uncompleted polyline
                     tempPolyline = null
                     latLngListCurrent.clear()
@@ -306,19 +322,23 @@ data class MapDrawingManager(
             }
 
             ShapeType.CIRCLE -> {
-                currentShapeIndex = circleList.indexOfFirst { it.third.tag == shapeID }// -1 if not found
-                if(currentShapeIndex >= 0){
+                currentShapeIndex =
+                    circleList.indexOfFirst { it.third.tag == shapeID }// -1 if not found
+                if (currentShapeIndex >= 0) {
                     // Edit completed circle only
                     currentCircle = circleList[currentShapeIndex].third
                     latLngListTemp.clear()
                     latLngListTemp.add(circleList[currentShapeIndex].third.center)
-                    latLngListTemp.add(Utils.getDestinationPoint(
-                        circleList[currentShapeIndex].third.center, DEFAULT_CIRCLE_RADIUS)  )
+                    latLngListTemp.add(
+                        Utils.getDestinationPoint(
+                            circleList[currentShapeIndex].third.center, DEFAULT_CIRCLE_RADIUS
+                        )
+                    )
                 }
             }
             ShapeType.POINT -> {
                 currentShapeIndex = markerList.indexOfFirst { it.tag == shapeID }
-                if(currentShapeIndex >= 0){
+                if (currentShapeIndex >= 0) {
                     // Edit completed polygon
                     currentMarker = markerList[currentShapeIndex]
                     latLngListTemp.clear()
@@ -339,7 +359,7 @@ data class MapDrawingManager(
                     it.remove()
                     drawPolygon(shapeId, currentShapeIndex, latLngListTemp)
                 }
-                    ?: run{
+                    ?: run {
                         //Edit - incomplete polygon (that is actually a polyline )
                         latLngListCurrent.set(currentMarkerIndex, marker.position)
                         val points = currentPolyline?.points
@@ -365,7 +385,7 @@ data class MapDrawingManager(
                         currentPolyline?.points = points
                     }
             }
-            ShapeType.CIRCLE ->  {
+            ShapeType.CIRCLE -> {
                 // Edit - Completed circle only
                 latLngListTemp.set(currentMarkerIndex, marker.position)
                 updateCircle(marker)
@@ -382,9 +402,9 @@ data class MapDrawingManager(
                     // Edit completed polygon
                     latLngListTemp.set(currentMarkerIndex, marker.position)
                     // Update marker position in marker list
-                    val updatedM =  polygonList[currentShapeIndex].first[currentMarkerIndex]
+                    val updatedM = polygonList[currentShapeIndex].first[currentMarkerIndex]
                     updatedM.position = marker.position
-                    polygonList[currentShapeIndex].first.set(currentMarkerIndex,updatedM)
+                    polygonList[currentShapeIndex].first.set(currentMarkerIndex, updatedM)
                     // Final attempt of draw polygon and update in polygonlist
                     val shapeid = it.tag.toString()
                     it.remove()
@@ -401,9 +421,9 @@ data class MapDrawingManager(
                     // Edit completed polygon
                     latLngListTemp.set(currentMarkerIndex, marker.position)
                     // Update marker position in marker list
-                    val updatedM =  polylineList[currentShapeIndex].first[currentMarkerIndex]
+                    val updatedM = polylineList[currentShapeIndex].first[currentMarkerIndex]
                     updatedM.position = marker.position
-                    polylineList[currentShapeIndex].first.set(currentMarkerIndex,updatedM)
+                    polylineList[currentShapeIndex].first.set(currentMarkerIndex, updatedM)
                     // Final attempt of draw polyline and update in polylinelist
                     val points = tempPolyline?.points
                     points?.set(currentMarkerIndex, marker.position)
@@ -420,7 +440,7 @@ data class MapDrawingManager(
                 latLngListTemp.set(currentMarkerIndex, marker.position)
                 val updatedNumBadge = updateCircle(marker)
                 // Update complete Triple in circleList
-                currentCircle?.let{
+                currentCircle?.let {
                     val list = ArrayList<Marker>()
                     list.addAll(circleList[currentShapeIndex].first)
                     circleList.set(currentShapeIndex, Triple(list, updatedNumBadge, it))
@@ -438,32 +458,44 @@ data class MapDrawingManager(
 
     fun enableRemoveMode() {
 
-        if(!isRemoveMode) {
+        if (!isRemoveMode) {
             // Show cross icon in place of last marker in the marker list of polygonList
             polygonList.forEach {
-                it.first.last().setIcon(Utils.getInstance()?.bitmapDescriptorFromVector(
-                    context, R.drawable.ic_cancel_24dp))
+                it.first.last().setIcon(
+                    Utils.getInstance()?.bitmapDescriptorFromVector(
+                        context, R.drawable.ic_cancel_24dp
+                    )
+                )
                 isRemoveMode = true
             }
 
             // Show cross icon in place of last marker in the marker list of polylineList
             polylineList.forEach {
-                it.first.last().setIcon(Utils.getInstance()?.bitmapDescriptorFromVector(
-                    context,R.drawable.ic_cancel_24dp))
+                it.first.last().setIcon(
+                    Utils.getInstance()?.bitmapDescriptorFromVector(
+                        context, R.drawable.ic_cancel_24dp
+                    )
+                )
                 isRemoveMode = true
             }
 
             // Show cross icon in place of last marker in the marker list of circleList
             circleList.forEach {
-                it.first.last().setIcon(Utils.getInstance()?.bitmapDescriptorFromVector(
-                    context,R.drawable.ic_cancel_24dp))
+                it.first.last().setIcon(
+                    Utils.getInstance()?.bitmapDescriptorFromVector(
+                        context, R.drawable.ic_cancel_24dp
+                    )
+                )
                 isRemoveMode = true
             }
             // Show cross icon below each Marker image
             markerList.forEach {
                 val markerOptions = MarkerOptions().position(it.position)
-                markerOptions.icon(Utils.getInstance()?.bitmapDescriptorFromVector(
-                    context,R.drawable.ic_cancel_24dp))
+                markerOptions.icon(
+                    Utils.getInstance()?.bitmapDescriptorFromVector(
+                        context, R.drawable.ic_cancel_24dp
+                    )
+                )
                 markerOptions.anchor(.5f, .5f)
                 val marker = googleMap.addMarker(markerOptions)
                 // Id formatted as point index in list # shape id # shape type
@@ -471,15 +503,14 @@ data class MapDrawingManager(
                 helperMarkersList.add(marker)
                 isRemoveMode = true
             }
-        }
-        else {
+        } else {
             cancelRemoveMode()
         }
 
-        if(isRemoveMode) removeListener?.onShapeRemoveModeEnabled(isRemoveMode)
+        if (isRemoveMode) removeListener?.onShapeRemoveModeEnabled(isRemoveMode)
     }
 
-    fun cancelRemoveMode(){
+    fun cancelRemoveMode() {
         isRemoveMode = false
         polygonList.forEach {
             it.first.last().setIcon(Utils.getDotIcon(markerSize, markerColor))
@@ -498,7 +529,7 @@ data class MapDrawingManager(
     }
 
     fun removeShape(shapeType: ShapeType, shapeIndex: Int) {
-        when(shapeType) {
+        when (shapeType) {
             ShapeType.POLYGON -> {
                 // 1. Remove All node markers
                 polygonList[shapeIndex].first.forEach { it.remove() }
@@ -543,10 +574,10 @@ data class MapDrawingManager(
         removeListener?.onShapeRemoveAfter(true)
     }
 
-    private fun handleRemovalProcess(marker: Marker){
+    private fun handleRemovalProcess(marker: Marker) {
 
         // To check user clicked on a node markers or not
-        if(!marker.tag.toString().contains("#")) return
+        if (!marker.tag.toString().contains("#")) return
 
         val markerTagParts = marker.tag.toString().split("#")
         val shapeID = markerTagParts[1]
@@ -554,20 +585,23 @@ data class MapDrawingManager(
         var shapeIndex = -1
         var shapeBadgeNum = 0
 
-        when(shapeType) {
+        when (shapeType) {
             ShapeType.POLYGON -> {
                 // Condition to find clicked marker is belongs to polygon list and is really crossed marker
                 shapeIndex = polygonList.indexOfFirst { it.third.tag == shapeID } // -1 if not found
                 if (shapeIndex >= 0 &&
-                    marker.position.equals(polygonList[shapeIndex].first.last().position)) {
+                    marker.position.equals(polygonList[shapeIndex].first.last().position)
+                ) {
                     shapeBadgeNum = polygonList[shapeIndex].second.tag as Int
                 }
             }
             ShapeType.POLYLINE -> {
                 // Condition to find clicked marker is belongs to polyline list and is really crossed marker
-                shapeIndex = polylineList.indexOfFirst { it.third.tag == shapeID } // -1 if not found
+                shapeIndex =
+                    polylineList.indexOfFirst { it.third.tag == shapeID } // -1 if not found
                 if (shapeIndex >= 0 &&
-                    marker.position.equals(polylineList[shapeIndex].first.last().position)) {
+                    marker.position.equals(polylineList[shapeIndex].first.last().position)
+                ) {
                     shapeBadgeNum = polylineList[shapeIndex].second.tag as Int
                 }
             }
@@ -575,7 +609,8 @@ data class MapDrawingManager(
                 // Condition to find clicked marker is belongs to circle list and is really crossed marker
                 shapeIndex = circleList.indexOfFirst { it.third.tag == shapeID } // -1 if not found
                 if (shapeIndex >= 0 &&
-                    marker.position.equals(circleList[shapeIndex].first.last().position)) {
+                    marker.position.equals(circleList[shapeIndex].first.last().position)
+                ) {
                     shapeBadgeNum = circleList[shapeIndex].second.tag as Int
                 }
             }
@@ -589,7 +624,8 @@ data class MapDrawingManager(
                         }
                     }
                     if (shapeIndex >= 0 &&
-                        marker.position.equals(markerList[shapeIndex].position)) {
+                        marker.position.equals(markerList[shapeIndex].position)
+                    ) {
                         shapeBadgeNum = markerTagParts[0].toInt()
                     }
                 }
@@ -597,7 +633,7 @@ data class MapDrawingManager(
         }
 
         // If shapeBadgeNum value > 0 means user clicked on crossed marker to delete shape
-        if(shapeBadgeNum > 0) {
+        if (shapeBadgeNum > 0) {
             removeListener?.onShapeRemoveBefore(shapeType, shapeIndex, shapeBadgeNum)
                 ?: removeShape(shapeType, shapeIndex)
         }
@@ -608,16 +644,24 @@ data class MapDrawingManager(
      * @param latLng Position on that badge will show on map
      * @param type For which type of shape you want to show this badge
      * @param value Calculated size/length of shape in feet or sq feet
+     * @param markerOptionVisibility show or hide marker option
      * @return Added marker
      */
-    private fun addNumBadgeMarkerOnMap(count: Int, latLng: LatLng, type: ShapeType
-                                       , value: Double): Marker {
-        val markerOption = MarkerOptions()
-        markerOption.position(latLng)
-        markerOption.anchor(0.5f, 0.5f)
-        markerOption.icon(Utils.getTextIcon(count.toString(), badgeColor, badgeTextColor))
+    private fun addNumBadgeMarkerOnMap(
+        count: Int,
+        latLng: LatLng,
+        type: ShapeType,
+        value: Double,
+        markerOptionVisibility: Boolean
+    ): Marker {
+        val markerOption = MarkerOptions().apply {
+            position(latLng)
+            anchor(0.5f, 0.5f)
+            visible(markerOptionVisibility)
+            icon(Utils.getTextIcon(count.toString(), badgeColor, badgeTextColor))
+        }
 
-        when(type){
+        when (type) {
             ShapeType.POLYGON -> {
                 markerOption.title(String.format("%.2f sq. feet", value))
                 markerOption.snippet("Size")
@@ -632,14 +676,17 @@ data class MapDrawingManager(
             }
             ShapeType.POINT -> {
                 markerOption.anchor(0.5f, 1.0f)
-                markerOption.icon(Utils.getInstance()?.getMarkerIcon(context
-                    , markerCount.toString()))
+                markerOption.icon(
+                    Utils.getInstance()?.getMarkerIcon(
+                        context, markerCount.toString()
+                    )
+                )
                 markerOption.title(count.toString())
                 markerOption.snippet("Count")
             }
         }
 
-        return googleMap.addMarker(markerOption).also{ it.tag = count }
+        return googleMap.addMarker(markerOption).also { it.tag = count }
     }
 
     private fun addMarkerOnMap(latLng: LatLng): Marker {
@@ -649,7 +696,7 @@ data class MapDrawingManager(
         val marker = googleMap.addMarker(markerOptions)
         marker?.isDraggable = editable
         // Id formatted as point index in list # shape id # shape type
-        marker?.tag = latLngListCurrent.size.toString() + "#" + shapeID+"#"+shapeType
+        marker?.tag = latLngListCurrent.size.toString() + "#" + shapeID + "#" + shapeType
         currentMarkers.add(marker)
         return marker
     }
@@ -663,7 +710,11 @@ data class MapDrawingManager(
      * any old polygon in polygonList
      * @return true if job done otherwise false
      */
-    private fun drawPolygon(polygonID: String, indexForEdit: Int, latLngList: List<LatLng>): Boolean {
+    private fun drawPolygon(
+        polygonID: String,
+        indexForEdit: Int,
+        latLngList: List<LatLng>
+    ): Boolean {
         if (latLngList.size >= 3) {
             val polygonOptions = PolygonOptions()
             polygonOptions.addAll(latLngList)
@@ -679,19 +730,21 @@ data class MapDrawingManager(
 
                 // Get polygon center
                 val builder = LatLngBounds.Builder()
-                latLngList.forEach{builder.include(it)}
+                latLngList.forEach { builder.include(it) }
                 val bounds = builder.build()
 
                 if (indexForEdit < 0) { // ADD
                     // Need to add because method calling for add polygon
                     // Add Num Badge
-                    val badgeMarker = addNumBadgeMarkerOnMap(++polygonCount,
-                        bounds.center, ShapeType.POLYGON, areaInSqFt)
+                    val badgeMarker = addNumBadgeMarkerOnMap(
+                        ++polygonCount,
+                        bounds.center, ShapeType.POLYGON, areaInSqFt,
+                        markerOptionVisibility
+                    )
                     val list = ArrayList<Marker>()
                     list.addAll(currentMarkers)
                     polygonList.add(Triple(list, badgeMarker, it))
-                }
-                else { // EDIT
+                } else { // EDIT
                     // Need to update because method calling for update polygon
                     val badgeMarker = polygonList.get(indexForEdit).second
                     badgeMarker.position = bounds.center
@@ -712,7 +765,11 @@ data class MapDrawingManager(
         return false
     }
 
-    private fun drawPolyline(polylineID: String, indexForEdit: Int, latLngList: List<LatLng>): Boolean {
+    private fun drawPolyline(
+        polylineID: String,
+        indexForEdit: Int,
+        latLngList: List<LatLng>
+    ): Boolean {
         if (latLngList.size >= 3) {
 
             // Calculate polyline area size
@@ -724,18 +781,20 @@ data class MapDrawingManager(
             val bounds = builder.build()
 
             if (indexForEdit < 0) { // ADD
-            currentPolyline?.let {
-                //Log.i(TAG, "==== saved shapeid $polylineID")
-                it.tag = polylineID
+                currentPolyline?.let {
+                    //Log.i(TAG, "==== saved shapeid $polylineID")
+                    it.tag = polylineID
                     // Add Num Badge
-                    val badgeMarker = addNumBadgeMarkerOnMap(++polylineCount,
-                        bounds.center, ShapeType.POLYLINE, lengthInFt)
+                    val badgeMarker = addNumBadgeMarkerOnMap(
+                        ++polylineCount,
+                        bounds.center, ShapeType.POLYLINE, lengthInFt,
+                        markerOptionVisibility
+                    )
                     val list = ArrayList<Marker>()
                     list.addAll(currentMarkers)
-                    polylineList.add(Triple(list,badgeMarker, it))
+                    polylineList.add(Triple(list, badgeMarker, it))
                 }
-            }
-            else { // EDIT
+            } else { // EDIT
                 tempPolyline?.let {
                     val badgeMarker = polylineList.get(indexForEdit).second
                     badgeMarker.position = bounds.center
@@ -752,7 +811,7 @@ data class MapDrawingManager(
         return false
     }
 
-    private fun updatePolyline( endLatLng: LatLng) {
+    private fun updatePolyline(endLatLng: LatLng) {
         //Log.i(TAG, "== updatePolyline ${latLngListCurrent.first()}")
         val points = currentPolyline?.points
         points?.add(endLatLng)
@@ -765,13 +824,13 @@ data class MapDrawingManager(
 //        drawListener?.onShapeCompleted(shapeType)
     }
 
-    private fun drawCircle(latLngCenter : LatLng){
+    private fun drawCircle(latLngCenter: LatLng) {
         // Center point
         addMarkerOnMap(latLngCenter)
         latLngListCurrent.add(latLngCenter)
 
         // Perimeter points
-        val perimeterPoint = Utils.getDestinationPoint(latLngCenter,DEFAULT_CIRCLE_RADIUS)
+        val perimeterPoint = Utils.getDestinationPoint(latLngCenter, DEFAULT_CIRCLE_RADIUS)
         addMarkerOnMap(perimeterPoint)
         latLngListCurrent.add(perimeterPoint)
 
@@ -789,9 +848,12 @@ data class MapDrawingManager(
         val bounds = builder.build()
 
         // Add Num Badge
-        val areaInSqFt =  (Math.PI * Math.sqrt(circleOptions.radius) ).squareMeterToFeet()
-        val badgeMarker = addNumBadgeMarkerOnMap(++circleCount,
-            bounds.center, ShapeType.CIRCLE, areaInSqFt)
+        val areaInSqFt = (Math.PI * Math.sqrt(circleOptions.radius)).squareMeterToFeet()
+        val badgeMarker = addNumBadgeMarkerOnMap(
+            ++circleCount,
+            bounds.center, ShapeType.CIRCLE, areaInSqFt,
+            markerOptionVisibility
+        )
 
         currentCircle = googleMap.addCircle(circleOptions)
         currentCircle?.tag = shapeID.toString()
@@ -799,17 +861,17 @@ data class MapDrawingManager(
         currentCircle?.let {
             val list = ArrayList<Marker>()
             list.addAll(currentMarkers)
-            circleList.add(Triple(list, badgeMarker,it))
+            circleList.add(Triple(list, badgeMarker, it))
         }
 
         drawListener?.onShapeCompleted(shapeType, shapeID.toString())
     }
 
-    private fun updateCircle(marker : Marker): Marker{
+    private fun updateCircle(marker: Marker): Marker {
 
         val numBadge = circleList[currentShapeIndex].second
 
-        if(currentMarkerIndex==0){
+        if (currentMarkerIndex == 0) {
             // Drag Circle
             currentCircle?.center = marker.position
 
@@ -825,15 +887,14 @@ data class MapDrawingManager(
                 builder.include(perimeter)
                 numBadge.position = builder.build().center
             }
-        }
-        else {
+        } else {
             currentCircle?.let {
                 // Resize Circle
                 it.radius = SphericalUtil.computeDistanceBetween(it.center, marker.position)
 
                 currentCircle?.let {
                     // Update Perimeter
-                    val perimeter = Utils.getDestinationPoint(it.center,it.radius)
+                    val perimeter = Utils.getDestinationPoint(it.center, it.radius)
                     // Update Perimeter point position
                     marker.position = perimeter
 
@@ -844,7 +905,7 @@ data class MapDrawingManager(
                     numBadge.position = builder.build().center
 
                     // Recalculate area
-                    val areaInSqFt =  (Math.PI * Math.sqrt(it.radius) ).squareMeterToFeet()
+                    val areaInSqFt = (Math.PI * Math.sqrt(it.radius)).squareMeterToFeet()
                     numBadge.title = String.format("%.2f sq. feet", areaInSqFt)
                 }
             }
@@ -863,8 +924,14 @@ data class MapDrawingManager(
      *
      * @param latLng LatLng to be used for marker position.
      */
-    private fun drawMarker(latLng : LatLng){
-        val imageMarker = addNumBadgeMarkerOnMap(++markerCount, latLng, ShapeType.POINT, 0.0)
+    private fun drawMarker(latLng: LatLng) {
+        val imageMarker = addNumBadgeMarkerOnMap(
+            ++markerCount,
+            latLng,
+            ShapeType.POINT,
+            0.0,
+            markerOptionVisibility = true
+        )
         imageMarker.isDraggable = editable
         latLngListCurrent.add(latLng)
         // Id formatted as point index in list # shape id # shape type
@@ -889,7 +956,7 @@ data class MapDrawingManager(
         currentMarkers.clear()
     }
 
-    private fun resetCircle(){
+    private fun resetCircle() {
         latLngListCurrent.clear()
         shapeID = System.currentTimeMillis()
         currentCircle = null
@@ -930,5 +997,5 @@ data class MapDrawingManager(
 
         removeListener?.onAllShapeRemove()
     }
-    
+
 }
